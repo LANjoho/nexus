@@ -23,3 +23,17 @@ CREATE TABLE IF NOT EXISTS room_events (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (room_id) REFERENCES rooms(id)
 );
+
+-- -----------------------------
+-- Room status history
+-- -----------------------------
+
+CREATE TABLE IF NOT EXISTS room_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER NOT NULL,
+    old_status TEXT NOT NULL,
+    new_status TEXT NOT NULL,
+    source TEXT DEFAULT 'manual',
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (room_id) REFERENCES rooms(id)
+);

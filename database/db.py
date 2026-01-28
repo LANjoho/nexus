@@ -18,5 +18,16 @@ class Database:
         self.conn.executescript(schema_sql)
         self.conn.commit()
 
+    def fetch_one(self, query, params=None):
+        cursor = self.conn.cursor()
+        cursor.execute(query, params or [])
+        row = cursor.fetchone()
+        return row[0] if row else None
+    
+    def fetch_all(self, query, params=None):
+        cursor = self.conn.cursor()
+        cursor.execute(query, params or [])
+        return cursor.fetchall()
+    
     def close(self):
         self.conn.close()
