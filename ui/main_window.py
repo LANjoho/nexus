@@ -10,8 +10,22 @@ db = Database()
 controller = RoomController(db)
 
 # ----------------------------
+# Status priority mapping
+# ----------------------------
+
+STATUS_PRIORITY = {
+    RoomStatus.NEEDS_CLEANING: 0,
+    RoomStatus.CLEANING: 1,
+    RoomStatus.OCCUPIED: 2,
+    RoomStatus.AVAILABLE: 3,
+    RoomStatus.MAINTENANCE: 4,
+    RoomStatus.OUT_OF_SERVICE: 5,
+}
+
+# ----------------------------
 # Color mapping for statuses
 # ----------------------------
+
 STATUS_COLORS = {
     RoomStatus.AVAILABLE: "#4CAF50",       # Green
     RoomStatus.OCCUPIED: "#F44336",        # Red
@@ -78,24 +92,56 @@ class MainWindow(ctk.CTk):
         self.title("Clinical Room Manager")
         self.geometry("800x600")
         self.controller = controller
-
+        
+        
         # Scrollable Frame
         self.scrollable_frame = ctk.CTkScrollableFrame(self)
         self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.room_tiles = []
         self.load_rooms()
-
+        
+        # Start auto-refresh loop (must be at the end of __init__)
+        self.auto_refresh()
+        
     def load_rooms(self):
         rooms = self.controller.get_all_rooms()
+
+        # Sort by priority, then room name
+        rooms.sort(
+            key=lambda r: (
+                STATUS_PRIORITY.get(RoomStatus(r["status"]), 99),
+                r["name"]
+            )
+        )
+
         for idx, room in enumerate(rooms):
             tile = RoomTile(self.scrollable_frame, room, self.controller)
             tile.grid(row=idx // 4, column=idx % 4, padx=10, pady=10)
             self.room_tiles.append(tile)
 
     def refresh_tiles(self):
-        for tile in self.room_tiles:
+        rooms = self.controller.get_all_rooms()
+
+        # Sort again on refresh
+        rooms.sort(
+            key=lambda r: (
+                STATUS_PRIORITY.get(RoomStatus(r["status"]), 99),
+                r["name"]
+            )
+        )
+
+        room_map = {tile.room["id"]: tile for tile in self.room_tiles}
+
+        for idx, room in enumerate(rooms):
+            tile = room_map[room["id"]]
+            tile.room = room
             tile.refresh()
+            tile.grid(row=idx // 4, column=idx % 4)
+
+    def auto_refresh(self):
+        self.refresh_tiles()
+        self.after(1000, self.auto_refresh)  # refresh every 1 second
 
 
 # ----------------------------
