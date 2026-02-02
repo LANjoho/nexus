@@ -2,6 +2,7 @@ import customtkinter as ctk
 from controllers.room_controller import RoomController
 from database.db import Database
 from models.enums import RoomStatus, UpdateSource
+from controllers.metrics_controller import MetricsController
 
 # ----------------------------
 # Initialize DB and controller
@@ -93,16 +94,56 @@ class MainWindow(ctk.CTk):
         self.geometry("800x600")
         self.controller = controller
         
+        self.metrics_controller = MetricsController(controller.db)
+        
+        # Tabs
+        self.tabs = ctk.CTkTabview(self)
+        self.tabs.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.rooms_tab = self.tabs.add("Rooms")
+        self.metrics_tab = self.tabs.add("Metrics")
         
         # Scrollable Frame
-        self.scrollable_frame = ctk.CTkScrollableFrame(self)
+        self.scrollable_frame = ctk.CTkScrollableFrame(self.rooms_tab)
         self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self.room_tiles = []
         self.load_rooms()
         
+        self.metric_labels = {}
+        
+        metrics_frame = ctk.CTkFrame(self.metrics_tab)
+        metrics_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        def add_metric(key, label, row):
+            title = ctk.CTkLabel(metrics_frame, text=label, font=("Arial", 16, "bold"))
+            title.grid(row=row, column=0, sticky="w", pady=10)
+
+            value = ctk.CTkLabel(metrics_frame, text="-", font=("Arial", 16))
+            value.grid(row=row, column=1, sticky="w", pady=10)
+
+            self.metric_labels[key] = value
+
+            
+        add_metric("avg_occupied", "Average Occupied Time:", 0)
+        add_metric("avg_cleaning", "Average Cleaning Time:", 1)
+        add_metric("turnovers", "Total Turnovers:", 2)
+        add_metric("stuck_rooms", "Rooms Stuck Needing Cleaning:", 3)
+
+        
         # Start auto-refresh loop (must be at the end of __init__)
         self.auto_refresh()
+        
+    def refresh_metrics(self):
+        data = self.metrics_controller.get_summary()
+
+        self.metric_labels["avg_occupied"].configure(text=data["avg_occupied"])
+        self.metric_labels["avg_cleaning"].configure(text=data["avg_cleaning"])
+        self.metric_labels["turnovers"].configure(text=str(data["turnovers"]))
+        self.metric_labels["stuck_rooms"].configure(
+            text=", ".join(map(str, data["stuck_rooms"])) or "-"
+        )
+
         
     def load_rooms(self):
         rooms = self.controller.get_all_rooms()
@@ -141,6 +182,7 @@ class MainWindow(ctk.CTk):
 
     def auto_refresh(self):
         self.refresh_tiles()
+        self.refresh_metrics()
         self.after(1000, self.auto_refresh)  # refresh every 1 second
 
 
