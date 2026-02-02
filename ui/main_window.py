@@ -3,6 +3,7 @@ from controllers.room_controller import RoomController
 from database.db import Database
 from models.enums import RoomStatus, UpdateSource
 from controllers.metrics_controller import MetricsController
+from datetime import datetime, timedelta
 
 # ----------------------------
 # Initialize DB and controller
@@ -115,12 +116,35 @@ class MainWindow(ctk.CTk):
         metrics_frame = ctk.CTkFrame(self.metrics_tab)
         metrics_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
+        # --- Date Range Selector ---
+        range_frame = ctk.CTkFrame(metrics_frame)
+        range_frame.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 20))
+        
+        self.range_var = ctk.StringVar(value="all")
+        
+        def on_range_change(choice):
+            self.selected_range = choice
+            self.refresh_metrics()
+            
+        self.range_menu = ctk.CTkOptionMenu(
+            range_frame,
+            values=["all", "today", "last_24h"],
+            variable=self.range_var,
+            command=on_range_change
+        )
+        
+        self.range_menu.pack(side="left", padx=10)
+        
+        ctk.CTkLabel(range_frame, text="Metric Time Range:").pack(side="left")
+        
+        #--- Metric Labels ---
+        
         def add_metric(key, label, row):
             title = ctk.CTkLabel(metrics_frame, text=label, font=("Arial", 16, "bold"))
-            title.grid(row=row, column=0, sticky="w", pady=10)
+            title.grid(row=row +1, column=0, sticky="w", pady=10)
 
             value = ctk.CTkLabel(metrics_frame, text="-", font=("Arial", 16))
-            value.grid(row=row, column=1, sticky="w", pady=10)
+            value.grid(row=row +1, column=1, sticky="w", pady=10)
 
             self.metric_labels[key] = value
 
@@ -133,8 +157,24 @@ class MainWindow(ctk.CTk):
         
         # Start auto-refresh loop (must be at the end of __init__)
         self.auto_refresh()
+    
+    def get_selected_range(self):
+        now = datetime.now()
         
+        if self.range_var.get() == "today":
+            start = datetime(now.year, now.month, now.day)
+            return start.isoformat(), now.isoformat()
+        
+        if self.range_var.get() == "last_24h":
+            start = now - timedelta(hours=24)
+            return start.isoformat(), now.isoformat()
+        
+        return None, None # all time
+    
+
+    
     def refresh_metrics(self):
+        start, end = self.get_selected_range()
         data = self.metrics_controller.get_summary()
 
         self.metric_labels["avg_occupied"].configure(text=data["avg_occupied"])
