@@ -9,7 +9,9 @@ class RoomStatus(Enum):
     """
     
     AVAILABLE = "available"
-    OCCUPIED = "occupied"
+    WAITING = "waiting"
+    #OCCUPIED = "occupied"
+    SEEING_PROVIDER = "seeing_provider"
     NEEDS_CLEANING = "needs_cleaning"
     CLEANING = "cleaning"
     MAINTENANCE = "maintenance"

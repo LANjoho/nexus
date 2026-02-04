@@ -18,10 +18,12 @@ controller = RoomController(db)
 STATUS_PRIORITY = {
     RoomStatus.NEEDS_CLEANING: 0,
     RoomStatus.CLEANING: 1,
-    RoomStatus.OCCUPIED: 2,
-    RoomStatus.AVAILABLE: 3,
-    RoomStatus.MAINTENANCE: 4,
-    RoomStatus.OUT_OF_SERVICE: 5,
+    #RoomStatus.OCCUPIED: 2,
+    RoomStatus.WAITING: 2,
+    RoomStatus.SEEING_PROVIDER: 3,
+    RoomStatus.AVAILABLE: 4,
+    RoomStatus.MAINTENANCE: 5,
+    RoomStatus.OUT_OF_SERVICE: 6,
 }
 
 # ----------------------------
@@ -30,10 +32,12 @@ STATUS_PRIORITY = {
 
 STATUS_COLORS = {
     RoomStatus.AVAILABLE: "#4CAF50",       # Green
-    RoomStatus.OCCUPIED: "#F44336",        # Red
+    RoomStatus.WAITING: "#FFEB3B",         # Yellow
+    RoomStatus.SEEING_PROVIDER: "#FF0000", # Purple
+    #RoomStatus.OCCUPIED: "#F44336",        # Red
     RoomStatus.NEEDS_CLEANING: "#FF9800",  # Orange
     RoomStatus.CLEANING: "#2196F3",        # Blue
-    RoomStatus.MAINTENANCE: "#9E9E9E",     # Gray
+    RoomStatus.MAINTENANCE: "#444444",     # Gray
     RoomStatus.OUT_OF_SERVICE: "#FFFFFF"   # White
 }
 
@@ -202,11 +206,12 @@ class MainWindow(ctk.CTk):
 
             self.metric_labels[key] = value
 
-            
-        add_metric("avg_occupied", "Average Occupied Time:", 0)
-        add_metric("avg_cleaning", "Average Cleaning Time:", 1)
-        add_metric("turnovers", "Total Turnovers:", 2)
-        add_metric("stuck_rooms", "Rooms Stuck Needing Cleaning:", 3)
+        add_metric("avg_wait", "Average Waiting Time:", 0)
+        add_metric("avg_provider", "Average Seeing Provider Time:", 1)
+        #add_metric("avg_occupied", "Average Occupied Time:", 0)
+        add_metric("avg_cleaning", "Average Cleaning Time:", 2)
+        add_metric("turnovers", "Total Turnovers:", 3)
+        add_metric("stuck_rooms", "Rooms Stuck Needing Cleaning:", 4)
 
         
         # Start auto-refresh loop (must be at the end of __init__)
@@ -235,7 +240,9 @@ class MainWindow(ctk.CTk):
             end=self.active_end_date
         )
 
-        self.metric_labels["avg_occupied"].configure(text=data["avg_occupied"])
+        #self.metric_labels["avg_occupied"].configure(text=data["avg_occupied"])
+        self.metric_labels["avg_wait"].configure(text=data["avg_wait"])
+        self.metric_labels["avg_provider"].configure(text=data["avg_provider"])
         self.metric_labels["avg_cleaning"].configure(text=data["avg_cleaning"])
         self.metric_labels["turnovers"].configure(text=str(data["turnovers"]))
         self.metric_labels["stuck_rooms"].configure(

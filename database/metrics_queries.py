@@ -62,7 +62,57 @@ class MetricsQueries:
         """
 
         return self.db.fetch_one(query, params + [from_status, to_status])
+    
+    def avg_wait_time(self, start=None, end=None):
+        where, params = self._time_filter(start, end)
 
+        where = self._append_filter(where, "start.new_status = 'Waiting'")
+        where = self._append_filter(where, "end.new_status = 'Seeing Provider'")
+
+        query = f"""
+        SELECT AVG(
+            (strftime('%s', end.timestamp) - strftime('%s', start.timestamp))
+        )
+        FROM room_status_history start
+        JOIN room_status_history end
+              ON start.room_id = end.room_id
+             AND end.id = (
+                 SELECT MIN(id)
+                 FROM room_status_history
+                 WHERE room_id = start.room_id
+                   AND id > start.id
+         )
+        {where}
+        """
+
+        return self.db.fetch_one(query, params)
+
+    def avg_provider_time(self, start=None, end=None):
+        where, params = self._time_filter(start, end)
+
+        where = self._append_filter(where, "start.new_status = 'Seeing Provider'")
+        where = self._append_filter(where, "end.new_status = 'Needs Cleaning'")
+
+        query = f"""
+        SELECT AVG(
+            (strftime('%s', end.timestamp) - strftime('%s', start.timestamp))
+        )
+        FROM room_status_history start
+        JOIN room_status_history end
+              ON start.room_id = end.room_id
+             AND end.id = (
+                 SELECT MIN(id)
+                 FROM room_status_history
+                 WHERE room_id = start.room_id
+                   AND id > start.id
+         )
+        {where}
+        """
+
+        return self.db.fetch_one(query, params)
+
+    '''
+    OLD OCCUPIED CODE
     def avg_occupied_time(self, start=None, end=None):
         return self.avg_transition_time(
             "occupied",
@@ -70,6 +120,7 @@ class MetricsQueries:
             start,
             end
         )
+    '''
 
     def avg_cleaning_time(self, start=None, end=None):
         return self.avg_transition_time(
