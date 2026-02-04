@@ -29,5 +29,10 @@ class Database:
         cursor.execute(query, params or [])
         return cursor.fetchall()
     
+    def execute(self, query, params=None):
+        cursor = self.conn.cursor()
+        cursor.execute(query, params or [])
+        self.conn.commit()
+    
     def close(self):
         self.conn.close()

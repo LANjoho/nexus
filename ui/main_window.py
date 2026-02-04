@@ -97,6 +97,9 @@ class MainWindow(ctk.CTk):
         
         self.metrics_controller = MetricsController(controller.db)
         
+        self.active_start_date = None
+        self.active_end_date = None
+        
         # Tabs
         self.tabs = ctk.CTkTabview(self)
         self.tabs.pack(fill="both", expand=True, padx=10, pady=10)
@@ -116,26 +119,77 @@ class MainWindow(ctk.CTk):
         metrics_frame = ctk.CTkFrame(self.metrics_tab)
         metrics_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
-        # --- Date Range Selector ---
+        # ----------------------------
+        # Custom Date Range Selector
+        # ----------------------------
+        
+        self.build_date_vars()
+
+        date_frame = ctk.CTkFrame(metrics_frame)
+        date_frame.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 20))
+
+        years = list(range(2020, datetime.now().year + 1))
+        months = list(range(1, 13))
+        days = list(range(1, 32))
+
+        def date_dropdown(parent, var, values):
+            return ctk.CTkOptionMenu(
+                parent,
+                values=[str(v).zfill(2) for v in values],
+                variable=var
+            )
+
+        # --- Start Date ---
+        ctk.CTkLabel(date_frame, text="Start Date").grid(row=0, column=0, padx=5)
+
+        date_dropdown(date_frame, self.start_year, years).grid(row=0, column=1)
+        date_dropdown(date_frame, self.start_month, months).grid(row=0, column=2)
+        date_dropdown(date_frame, self.start_day, days).grid(row=0, column=3)
+
+        # --- End Date ---
+        ctk.CTkLabel(date_frame, text="End Date").grid(row=1, column=0, padx=5)
+
+        date_dropdown(date_frame, self.end_year, years).grid(row=1, column=1)
+        date_dropdown(date_frame, self.end_month, months).grid(row=1, column=2)
+        date_dropdown(date_frame, self.end_day, days).grid(row=1, column=3)
+
+        # Apply button
+        ctk.CTkButton(
+            date_frame,
+            text="Apply",
+            command=self.apply_date_filter
+        ).grid(row=0, column=4, rowspan=2, padx=15)
+
+        
+        '''
+        OLD VERSION:
         range_frame = ctk.CTkFrame(metrics_frame)
         range_frame.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 20))
-        
-        self.range_var = ctk.StringVar(value="all")
-        
-        def on_range_change(choice):
-            self.selected_range = choice
-            self.refresh_metrics()
-            
-        self.range_menu = ctk.CTkOptionMenu(
+
+        ctk.CTkLabel(range_frame, text="From:").grid(row=0, column=0, padx=(0, 5))
+        self.start_date_entry = ctk.CTkEntry(
             range_frame,
-            values=["all", "today", "last_24h"],
-            variable=self.range_var,
-            command=on_range_change
+            placeholder_text="YYYY-MM-DD",
+            width=120
         )
-        
-        self.range_menu.pack(side="left", padx=10)
-        
-        ctk.CTkLabel(range_frame, text="Metric Time Range:").pack(side="left")
+        self.start_date_entry.grid(row=0, column=1, padx=(0, 15))
+
+        ctk.CTkLabel(range_frame, text="To:").grid(row=0, column=2, padx=(0, 5))
+        self.end_date_entry = ctk.CTkEntry(
+            range_frame,
+            placeholder_text="YYYY-MM-DD",
+            width=120
+        )
+        self.end_date_entry.grid(row=0, column=3, padx=(0, 15))
+
+        self.apply_range_btn = ctk.CTkButton(
+            range_frame,
+            text="Apply",
+            width=80,
+            command=self.apply_date_range
+        )
+        self.apply_range_btn.grid(row=0, column=4)
+        '''
         
         #--- Metric Labels ---
         
@@ -158,24 +212,28 @@ class MainWindow(ctk.CTk):
         # Start auto-refresh loop (must be at the end of __init__)
         self.auto_refresh()
     
-    def get_selected_range(self):
+
+    def apply_date_filter(self):
+        self.apply_date_range()
+        self.refresh_metrics()
+
+        
+    def build_date_vars(self):
         now = datetime.now()
         
-        if self.range_var.get() == "today":
-            start = datetime(now.year, now.month, now.day)
-            return start.isoformat(), now.isoformat()
+        self.start_year = ctk.IntVar(value=now.year)
+        self.start_month = ctk.IntVar(value=now.month)
+        self.start_day = ctk.IntVar(value=now.day)
         
-        if self.range_var.get() == "last_24h":
-            start = now - timedelta(hours=24)
-            return start.isoformat(), now.isoformat()
-        
-        return None, None # all time
+        self.end_year = ctk.IntVar(value=now.year)
+        self.end_month = ctk.IntVar(value=now.month)
+        self.end_day = ctk.IntVar(value=now.day)
     
-
-    
-    def refresh_metrics(self):
-        start, end = self.get_selected_range()
-        data = self.metrics_controller.get_summary()
+    def refresh_metrics(self):        
+        data = self.metrics_controller.get_summary(
+            start=self.active_start_date,
+            end=self.active_end_date
+        )
 
         self.metric_labels["avg_occupied"].configure(text=data["avg_occupied"])
         self.metric_labels["avg_cleaning"].configure(text=data["avg_cleaning"])
@@ -183,7 +241,32 @@ class MainWindow(ctk.CTk):
         self.metric_labels["stuck_rooms"].configure(
             text=", ".join(map(str, data["stuck_rooms"])) or "-"
         )
+        
+    def apply_date_range(self):
+        try:
+            start = datetime(
+                self.start_year.get(),
+                self.start_month.get(),
+                self.start_day.get()
+            )
 
+            end = datetime(
+                self.end_year.get(),
+                self.end_month.get(),
+                self.end_day.get()
+            ) + timedelta(days=1)  # inclusive end date
+
+            if start > end:
+                self.active_start_date = None
+                self.active_end_date = None
+                return
+
+            self.active_start_date = start.isoformat()
+            self.active_end_date = end.isoformat()
+
+        except ValueError:
+            self.active_start_date = None
+            self.active_end_date = None
         
     def load_rooms(self):
         rooms = self.controller.get_all_rooms()
