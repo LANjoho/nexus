@@ -10,7 +10,7 @@ room_id = controller.create_room("Room 101")
 print(f"Created Room ID: {room_id}")
 
 # Update status manually
-controller.update_status(room_id, RoomStatus.OCCUPIED)
+controller.update_status(room_id, RoomStatus.SEEING_PROVIDER)
 controller.update_status(room_id, RoomStatus.NEEDS_CLEANING)
 
 # Fetch current rooms

@@ -1,4 +1,3 @@
-from datetime import datetime
 from database.db import Database
 
 
@@ -6,19 +5,19 @@ class MetricsQueries:
     def __init__(self, db: Database):
         self.db = db
 
-    def _time_filter(self, start=None, end=None):
+    def _visit_time_filter(self, start=None, end=None):       
         """
-        Builds SQL WHERE clause for optional date filtering
+        Builds SQL WHERE clause for optional date filtering on visit windows.
         """
         clauses = []
         params = []
 
         if start:
-            clauses.append("timestamp >= ?")
+            clauses.append("v.start_time >= ?")
             params.append(start)
 
         if end:
-            clauses.append("timestamp <= ?")
+            clauses.append("(v.end_time IS NOT NULL AND v.end_time <= ?)")
             params.append(end)
 
         where = ""
@@ -27,127 +26,71 @@ class MetricsQueries:
 
         return where, params
 
-    def _append_filter(self, base_where, extra_clause):
-        """
-        Safely appends an extra clause to a WHERE statement
-        """
-        if base_where:
-            return f"{base_where} AND {extra_clause}"
-        return f"WHERE {extra_clause}"
-
-    def avg_transition_time(self, from_status, to_status, start=None, end=None):
-        """
-        Average time (in seconds) between two statuses
-        """
-        where, params = self._time_filter(start, end)
-
-        # Append status filters safely
-        where = self._append_filter(where, "curr.new_status = ?")
-        where = self._append_filter(where, "next.new_status = ?")
-
+    def _avg_transition_within_visit(self, from_status, to_status, start=None, end=None):
+        where, params = self._visit_time_filter(start, end)
+        
         query = f"""
-        SELECT AVG(
-            strftime('%s', next.timestamp) - strftime('%s', curr.timestamp)
-        ) AS avg_seconds
-        FROM room_status_history curr
-        JOIN room_status_history next
-            ON curr.room_id = next.room_id
-           AND next.id = (
-                SELECT MIN(id)
-                FROM room_status_history
-                WHERE room_id = curr.room_id
-                  AND id > curr.id
-            )
-        {where}
+        SELECT AVG(strftime('%s', to_ts) - strftime('%s', from_ts))
+        FROM (
+            SELECT
+                v.id,
+                (
+                    SELECT MIN(hf.timestamp)
+                    FROM room_status_history hf
+                    WHERE hf.room_id = v.room_id
+                      AND hf.new_status = ?
+                      AND hf.timestamp >= v.start_time
+                      AND (v.end_time IS NULL OR hf.timestamp <= v.end_time)
+                ) AS from_ts,
+                (
+                    SELECT MIN(ht.timestamp)
+                    FROM room_status_history ht
+                    WHERE ht.room_id = v.room_id
+                      AND ht.new_status = ?
+                      AND ht.timestamp >= v.start_time
+                      AND (v.end_time IS NULL OR ht.timestamp <= v.end_time)
+                ) AS to_ts
+            FROM visits v
+            {where}
+        ) visit_durations
+        WHERE from_ts IS NOT NULL
+          AND to_ts IS NOT NULL
+          AND to_ts > from_ts
         """
 
-        return self.db.fetch_one(query, params + [from_status, to_status])
+        return self.db.fetch_one(query, [from_status, to_status, *params])
     
     def avg_wait_time(self, start=None, end=None):
-        where, params = self._time_filter(start, end)
-
-        where = self._append_filter(where, "start.new_status = 'waiting'")
-        where = self._append_filter(where, "end.new_status = 'seeing_provider'")
-
-        query = f"""
-        SELECT AVG(
-            (strftime('%s', end.timestamp) - strftime('%s', start.timestamp))
+        return self._avg_transition_within_visit(
+            from_status='waiting',
+            to_status='seeing_provider',
+            start=start,
+            end=end,
         )
-        FROM room_status_history start
-        JOIN room_status_history end
-              ON start.room_id = end.room_id
-             AND end.id = (
-                 SELECT MIN(id)
-                 FROM room_status_history
-                 WHERE room_id = start.room_id
-                   AND id > start.id
-         )
-        {where}
-        """
-
-        return self.db.fetch_one(query, params)
 
     def avg_provider_time(self, start=None, end=None):
-        where, params = self._time_filter(start, end)
-
-        where = self._append_filter(where, "start.new_status = 'seeing_provider'")
-        where = self._append_filter(where, "end.new_status = 'needs_cleaning'")
-
-        query = f"""
-        SELECT AVG(
-            (strftime('%s', end.timestamp) - strftime('%s', start.timestamp))
+        return self._avg_transition_within_visit(
+            from_status='seeing_provider',
+            to_status='needs_cleaning',
+            start=start,
+            end=end,
         )
-        FROM room_status_history start
-        JOIN room_status_history end
-              ON start.room_id = end.room_id
-             AND end.id = (
-                 SELECT MIN(id)
-                 FROM room_status_history
-                 WHERE room_id = start.room_id
-                   AND id > start.id
-         )
-        {where}
-        """
-
-        return self.db.fetch_one(query, params)
-
-    '''
-    OLD OCCUPIED CODE
-    def avg_occupied_time(self, start=None, end=None):
-        return self.avg_transition_time(
-            "occupied",
-            "needs_cleaning",
-            start,
-            end
-        )
-    '''
 
     def avg_cleaning_time(self, start=None, end=None):
-        query = """
-        SELECT AVG(
-            strftime('%s', next.timestamp) - strftime('%s', curr.timestamp)
-        ) AS avg_cleaning_time
-        FROM room_status_history curr
-        JOIN room_status_history next
-            ON curr.room_id = next.room_id
-            AND curr.new_status = 'cleaning'
-            AND next.new_status = 'available'
-            AND next.timestamp > curr.timestamp
-        """
-    
-        result = self.db.fetch_one(query)
-        return result
+        return self._avg_transition_within_visit(
+            from_status='cleaning',
+            to_status='available',
+            start=start,
+            end=end,
+        )
 
 
     def total_turnovers(self, start=None, end=None):
-        where, params = self._time_filter(start, end)
-
-        # Always filter for turnovers
-        where = self._append_filter(where, "new_status = 'needs_cleaning'")
+        where, params = self._visit_time_filter(start, end)
 
         query = f"""
         SELECT COUNT(*) AS turnovers
-        FROM room_status_history
+        FROM visits v
         {where}
         """
 
@@ -158,12 +101,18 @@ class MetricsQueries:
         Rooms in needs_cleaning longer than threshold
         """
         query = """
-        SELECT room_id,
-               MAX(timestamp) AS since
-        FROM room_status_history
-        WHERE new_status = 'needs_cleaning'
-        GROUP BY room_id
-        HAVING strftime('%s','now') - strftime('%s', since) > ?
+        SELECT r.id
+        FROM rooms r
+        JOIN (
+            SELECT room_id, MAX(timestamp) AS since
+            FROM room_status_history
+            WHERE new_status = 'needs_cleaning'
+            GROUP BY room_id
+        ) latest_nc ON latest_nc.room_id = r.id
+        WHERE r.status = 'needs_cleaning'
+          AND strftime('%s','now','localtime') - strftime('%s', latest_nc.since) > ?
+        ORDER BY r.id
         """
 
-        return self.db.fetch_all(query, [threshold_seconds])
+        rows = self.db.fetch_all(query, [threshold_seconds])
+        return [row[0] for row in rows]

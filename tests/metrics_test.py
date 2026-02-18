@@ -7,7 +7,6 @@ from utils.time_format import seconds_to_mmss
 db = Database()
 metrics = MetricsQueries(db)
 
-print("Avg occupied time:", seconds_to_mmss(metrics.avg_occupied_time()))
 print("Avg cleaning time:", seconds_to_mmss(metrics.avg_cleaning_time()))
 print("Total turnovers:", metrics.total_turnovers())
 print("Rooms stuck:", metrics.rooms_stuck_needing_cleaning())
