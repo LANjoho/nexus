@@ -66,8 +66,8 @@ class MetricsQueries:
     def avg_wait_time(self, start=None, end=None):
         where, params = self._time_filter(start, end)
 
-        where = self._append_filter(where, "start.new_status = 'Waiting'")
-        where = self._append_filter(where, "end.new_status = 'Seeing Provider'")
+        where = self._append_filter(where, "start.new_status = 'waiting'")
+        where = self._append_filter(where, "end.new_status = 'seeing_provider'")
 
         query = f"""
         SELECT AVG(
@@ -90,8 +90,8 @@ class MetricsQueries:
     def avg_provider_time(self, start=None, end=None):
         where, params = self._time_filter(start, end)
 
-        where = self._append_filter(where, "start.new_status = 'Seeing Provider'")
-        where = self._append_filter(where, "end.new_status = 'Needs Cleaning'")
+        where = self._append_filter(where, "start.new_status = 'seeing_provider'")
+        where = self._append_filter(where, "end.new_status = 'needs_cleaning'")
 
         query = f"""
         SELECT AVG(
@@ -123,12 +123,21 @@ class MetricsQueries:
     '''
 
     def avg_cleaning_time(self, start=None, end=None):
-        return self.avg_transition_time(
-            "cleaning",
-            "available",
-            start,
-            end
-        )
+        query = """
+        SELECT AVG(
+            strftime('%s', next.timestamp) - strftime('%s', curr.timestamp)
+        ) AS avg_cleaning_time
+        FROM room_status_history curr
+        JOIN room_status_history next
+            ON curr.room_id = next.room_id
+            AND curr.new_status = 'cleaning'
+            AND next.new_status = 'available'
+            AND next.timestamp > curr.timestamp
+        """
+    
+        result = self.db.fetch_one(query)
+        return result
+
 
     def total_turnovers(self, start=None, end=None):
         where, params = self._time_filter(start, end)

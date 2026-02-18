@@ -1,6 +1,6 @@
 from models.enums import RoomStatus, UpdateSource
 from database.db import Database
-
+from datetime import datetime
 
 class RoomController:
     """
@@ -35,22 +35,69 @@ class RoomController:
         cursor = self.db.conn.cursor()
 
         # Get current status
-        row = cursor.execute("SELECT status FROM rooms WHERE id=?", (room_id,)).fetchone()
+        row = cursor.execute(
+            "SELECT status FROM rooms WHERE id=?", (room_id,)
+        ).fetchone()
+
         if not row:
             raise ValueError(f"Room with ID {room_id} does not exist")
 
         old_status = row["status"]
 
-        # Optional: validate state transition here
-        # e.g., you might forbid cleaning -> occupied directly
+        # ---------------------------
+        # VISIT START LOGIC
+        # ---------------------------
+        if (
+            old_status == RoomStatus.AVAILABLE.value
+            and new_status == RoomStatus.WAITING
+        ):
+            # Check for existing active visit
+            active_visit = cursor.execute(
+                """
+                SELECT id FROM visits
+                WHERE room_id = ?
+                AND end_time IS NULL
+                """,
+                (room_id,),
+            ).fetchone()
 
+            if not active_visit:
+                cursor.execute(
+                    """
+                    INSERT INTO visits (room_id, start_time)
+                    VALUES (?, ?)
+                    """,
+                    (room_id, datetime.now()),
+                )
+
+        # ---------------------------
+        # VISIT END LOGIC
+        # ---------------------------
+        if (
+            old_status == RoomStatus.CLEANING.value
+            and new_status == RoomStatus.AVAILABLE
+        ):
+            cursor.execute(
+                """
+                UPDATE visits
+                SET end_time = ?
+                WHERE room_id = ?
+                AND end_time IS NULL
+                """,
+                (datetime.now(), room_id),
+            )
+
+        # ---------------------------
         # Update rooms table
+        # ---------------------------
         cursor.execute(
             "UPDATE rooms SET status=? WHERE id=?",
             (new_status.value, room_id),
         )
 
-        # Log the change in room_events
+        # ---------------------------
+        # Log the change
+        # ---------------------------
         cursor.execute(
             """
             INSERT INTO room_events (room_id, old_status, new_status, source)
@@ -58,8 +105,19 @@ class RoomController:
             """,
             (room_id, old_status, new_status.value, source.value),
         )
+        
+        # Log into room_status_history (used for metrics)
+        cursor.execute(
+            """
+            INSERT INTO room_status_history (room_id, old_status, new_status, source)
+            VALUES (?, ?, ?, ?)
+            """,
+            (room_id, old_status, new_status.value, source.value),
+        )
+
 
         self.db.conn.commit()
+
 
     # ---------------------------
     # Query methods

@@ -37,3 +37,14 @@ CREATE TABLE IF NOT EXISTS room_status_history (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (room_id) REFERENCES rooms(id)
 );
+
+-- -----------------------------
+-- Visits (room lifecycle tracking)
+-- -----------------------------
+CREATE TABLE IF NOT EXISTS visits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id INTEGER NOT NULL,
+    start_time DATETIME NOT NULL,
+    end_time DATETIME,
+    FOREIGN KEY (room_id) REFERENCES rooms(id)
+);
