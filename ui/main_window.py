@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from tkinter import messagebox
 from controllers.room_controller import RoomController
 from database.db import Database
 from models.enums import RoomStatus, UpdateSource
@@ -82,8 +83,23 @@ class RoomTile(ctk.CTkFrame):
             self.buttons.append(btn)
 
     def update_status(self, new_status):
+        current_status = RoomStatus(self.room["status"])
+        
+        # Optional: skip no-op updates
+        if new_status == current_status:
+            return
+        
+        confirmed = messagebox.askyesno(
+            "Confirm Status Change",
+            f"Are you sure you want to change status of {self.room['name']} from {current_status.value} to {new_status.value}?"
+        )
+        if not confirmed:
+            return
+        
         self.controller.update_status(self.room["id"], new_status, UpdateSource.MANUAL)
         self.refresh()
+
+
 
     def refresh(self):
         room_dict = {r["id"]: r for r in self.controller.get_all_rooms()}
