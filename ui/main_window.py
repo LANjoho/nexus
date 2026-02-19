@@ -5,6 +5,7 @@ from database.db import Database
 from models.enums import RoomStatus, UpdateSource
 from controllers.metrics_controller import MetricsController
 from datetime import datetime, timedelta
+from services.shift_service import ShiftService
 
 # ----------------------------
 # Initialize DB and controller
@@ -39,7 +40,7 @@ STATUS_COLORS = {
     RoomStatus.NEEDS_CLEANING: "#FF9800",  # Orange
     RoomStatus.CLEANING: "#2196F3",        # Blue
     RoomStatus.MAINTENANCE: "#444444",     # Gray
-    RoomStatus.OUT_OF_SERVICE: "#FFFFFF"   # White
+    RoomStatus.OUT_OF_SERVICE: "#FFFFFF",   # White
 }
 
 # ----------------------------
@@ -54,14 +55,14 @@ class RoomTile(ctk.CTkFrame):
 
         # Room Name
         self.name_label = ctk.CTkLabel(self, text=room["name"], font=("Arial", 14, "bold"))
-        self.name_label.grid(row=0, column=0, columnspan=3, pady=(5,0))
+        self.name_label.grid(row=0, column=0, columnspan=3, pady=(5, 0))
 
         # Status Label
         self.status_label = ctk.CTkLabel(
             self,
             text=room["status"],
             fg_color=STATUS_COLORS.get(RoomStatus(room["status"]), "#FFFFFF"),
-            corner_radius=5
+            corner_radius=5,
         )
         self.status_label.grid(row=1, column=0, columnspan=3, pady=5, sticky="ew")
 
@@ -77,7 +78,7 @@ class RoomTile(ctk.CTkFrame):
                 width=60,
                 height=25,
                 fg_color=STATUS_COLORS.get(status, "#CCCCCC"),
-                command=lambda s=status: self.update_status(s)
+                command=lambda s=status: self.update_status(s),
             )
             btn.grid(row=row, column=col, padx=2, pady=2, sticky="ew")
             self.buttons.append(btn)
@@ -103,19 +104,25 @@ class RoomTile(ctk.CTkFrame):
 
     def refresh(self):
         room_dict = {r["id"]: r for r in self.controller.get_all_rooms()}
+        if self.room["id"] not in room_dict:
+            self.destroy()
+            return        
         self.room = room_dict[self.room["id"]]
         self.status_label.configure(
             text=self.room["status"],
-            fg_color=STATUS_COLORS.get(RoomStatus(self.room["status"]), "#CCCCCC")
+            fg_color=STATUS_COLORS.get(RoomStatus(self.room["status"]), "#CCCCCC"),
         )
 class MainWindow(ctk.CTk):
-    def __init__(self, controller):
+    def __init__(self):
         super().__init__()
         self.title("Clinical Room Manager")
-        self.geometry("800x600")
-        self.controller = controller
         
-        self.metrics_controller = MetricsController(controller.db)
+        self.geometry("1000x700")
+
+        self.shift_service = ShiftService()
+        self.db = None
+        self.controller = None
+        self.metrics_controller = None
         
         self.active_start_date = None
         self.active_end_date = None
@@ -128,14 +135,32 @@ class MainWindow(ctk.CTk):
         self.metrics_tab = self.tabs.add("Metrics")
         
         # Scrollable Frame
+        
+        self.metric_labels = {}
+        self.room_tiles = []
+
+        self._build_rooms_tab()
+        self._build_metrics_tab()
+
+        self.initialize_active_shift()
+        self.auto_refresh()
+
+    def _build_rooms_tab(self):
+        controls = ctk.CTkFrame(self.rooms_tab)
+        controls.pack(fill="x", padx=10, pady=(10, 6))
+
+        self.shift_status_label = ctk.CTkLabel(controls, text="Shift: none")
+        self.shift_status_label.pack(side="left", padx=(8, 16), pady=8)
+
+        ctk.CTkButton(controls, text="Start Shift", command=self.start_shift).pack(side="left", padx=4)
+        ctk.CTkButton(controls, text="End Shift", command=self.end_shift).pack(side="left", padx=4)
+        ctk.CTkButton(controls, text="Add Room", command=self.add_room_dialog).pack(side="left", padx=20)
+        ctk.CTkButton(controls, text="Remove Room", command=self.remove_room_dialog).pack(side="left", padx=4)
+        
         self.scrollable_frame = ctk.CTkScrollableFrame(self.rooms_tab)
         self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        self.room_tiles = []
-        self.load_rooms()
-        
-        self.metric_labels = {}
-        
+    def _build_metrics_tab(self):
         metrics_frame = ctk.CTkFrame(self.metrics_tab)
         metrics_frame.pack(fill="both", expand=True, padx=20, pady=20)
         
@@ -153,11 +178,7 @@ class MainWindow(ctk.CTk):
         days = list(range(1, 32))
 
         def date_dropdown(parent, var, values):
-            return ctk.CTkOptionMenu(
-                parent,
-                values=[str(v).zfill(2) for v in values],
-                variable=var
-            )
+            return ctk.CTkOptionMenu(parent, values=[str(v).zfill(2) for v in values], variable=var)
 
         # --- Start Date ---
         ctk.CTkLabel(date_frame, text="Start Date").grid(row=0, column=0, padx=5)
@@ -173,66 +194,130 @@ class MainWindow(ctk.CTk):
         date_dropdown(date_frame, self.end_month, months).grid(row=1, column=2)
         date_dropdown(date_frame, self.end_day, days).grid(row=1, column=3)
 
-        # Apply button
-        ctk.CTkButton(
-            date_frame,
-            text="Apply",
-            command=self.apply_date_filter
-        ).grid(row=0, column=4, rowspan=2, padx=15)
-
-        
-        '''
-        OLD VERSION:
-        range_frame = ctk.CTkFrame(metrics_frame)
-        range_frame.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 20))
-
-        ctk.CTkLabel(range_frame, text="From:").grid(row=0, column=0, padx=(0, 5))
-        self.start_date_entry = ctk.CTkEntry(
-            range_frame,
-            placeholder_text="YYYY-MM-DD",
-            width=120
-        )
-        self.start_date_entry.grid(row=0, column=1, padx=(0, 15))
-
-        ctk.CTkLabel(range_frame, text="To:").grid(row=0, column=2, padx=(0, 5))
-        self.end_date_entry = ctk.CTkEntry(
-            range_frame,
-            placeholder_text="YYYY-MM-DD",
-            width=120
-        )
-        self.end_date_entry.grid(row=0, column=3, padx=(0, 15))
-
-        self.apply_range_btn = ctk.CTkButton(
-            range_frame,
-            text="Apply",
-            width=80,
-            command=self.apply_date_range
-        )
-        self.apply_range_btn.grid(row=0, column=4)
-        '''
-        
+        ctk.CTkButton(date_frame, text="Apply", command=self.apply_date_filter).grid(row=0, column=4, rowspan=2, padx=15)
         #--- Metric Labels ---
         
         def add_metric(key, label, row):
             title = ctk.CTkLabel(metrics_frame, text=label, font=("Arial", 16, "bold"))
-            title.grid(row=row +1, column=0, sticky="w", pady=10)
+            title.grid(row=row + 1, column=0, sticky="w", pady=10)
 
             value = ctk.CTkLabel(metrics_frame, text="-", font=("Arial", 16))
-            value.grid(row=row +1, column=1, sticky="w", pady=10)
+            value.grid(row=row + 1, column=1, sticky="w", pady=10)
 
             self.metric_labels[key] = value
 
         add_metric("avg_wait", "Average Waiting Time:", 0)
         add_metric("avg_provider", "Average Seeing Provider Time:", 1)
-        #add_metric("avg_occupied", "Average Occupied Time:", 0)
         add_metric("avg_cleaning", "Average Cleaning Time:", 2)
         add_metric("turnovers", "Total Turnovers:", 3)
         add_metric("stuck_rooms", "Rooms Stuck Needing Cleaning:", 4)
-
         
-        # Start auto-refresh loop (must be at the end of __init__)
-        self.auto_refresh()
-    
+    def initialize_active_shift(self):
+        active = self.shift_service.get_active_db_path()
+        if active:
+            self._bind_database(active)
+            self.shift_status_label.configure(text=f"Shift: ACTIVE ({active.name})")
+        else:
+            self.shift_status_label.configure(text="Shift: none (click Start Shift)")
+
+    def _bind_database(self, db_path):
+        if self.db:
+            self.db.close()
+
+        self.db = Database(str(db_path))
+        self.controller = RoomController(self.db)
+        self.metrics_controller = MetricsController(self.db)
+        self.reload_rooms()
+        self.refresh_metrics()
+
+    def start_shift(self):
+        db_path, created = self.shift_service.start_shift()
+        self._bind_database(db_path)
+
+        if created:
+            messagebox.showinfo("Shift Started", f"Shift database created:\n{db_path}")
+        else:
+            messagebox.showinfo("Shift Already Active", f"Using active shift database:\n{db_path}")
+
+        self.shift_status_label.configure(text=f"Shift: ACTIVE ({db_path.name})")
+
+    def end_shift(self):
+        if not self.db:
+            messagebox.showwarning("No Active Shift", "There is no active shift to end.")
+            return
+
+        confirmed = messagebox.askyesno("Confirm End Shift", "End current shift and archive its database?")
+        if not confirmed:
+            return
+
+        self.db.close()
+        self.db = None
+        self.controller = None
+        self.metrics_controller = None
+
+        old_path, archived_path, ended = self.shift_service.end_shift()
+        if not ended:
+            messagebox.showwarning("No Active Shift", "There is no active shift to end.")
+            return
+
+        self.shift_status_label.configure(text="Shift: none (click Start Shift)")
+        self.clear_rooms()
+
+        messagebox.showinfo(
+            "Shift Ended",
+            f"Archived shift database:\n{archived_path}\n\n"
+            "Next step: upload this archived DB to your long-term analytics store.",
+        )
+
+    def add_room_dialog(self):
+        if not self.controller:
+            messagebox.showwarning("No Active Shift", "Start a shift before adding rooms.")
+            return
+
+        dialog = ctk.CTkInputDialog(text="Enter new room name:", title="Add Room")
+        room_name = dialog.get_input()
+        if not room_name:
+            return
+
+        room_name = room_name.strip()
+        if not room_name:
+            return
+
+        try:
+            self.controller.create_room(room_name, initial_status=RoomStatus.AVAILABLE)
+        except Exception as exc:
+            messagebox.showerror("Add Room Failed", str(exc))
+            return
+
+        self.reload_rooms()
+
+    def remove_room_dialog(self):
+        if not self.controller:
+            messagebox.showwarning("No Active Shift", "Start a shift before removing rooms.")
+            return
+
+        dialog = ctk.CTkInputDialog(text="Enter room name to remove:", title="Remove Room")
+        room_name = dialog.get_input()
+        if not room_name:
+            return
+
+        room_name = room_name.strip()
+        rooms = self.controller.get_all_rooms()
+        match = next((r for r in rooms if r["name"].lower() == room_name.lower()), None)
+
+        if not match:
+            messagebox.showwarning("Room Not Found", f"No room named '{room_name}' was found.")
+            return
+
+        confirmed = messagebox.askyesno(
+            "Confirm Room Removal",
+            f"Remove room '{match['name']}' and all of its visit/event history?",
+        )
+        if not confirmed:
+            return
+
+        self.controller.delete_room(match["id"])
+        self.reload_rooms()
 
     def apply_date_filter(self):
         self.apply_date_range()
@@ -250,20 +335,20 @@ class MainWindow(ctk.CTk):
         self.end_month = ctk.IntVar(value=now.month)
         self.end_day = ctk.IntVar(value=now.day)
     
-    def refresh_metrics(self):        
-        data = self.metrics_controller.get_summary(
-            start=self.active_start_date,
-            end=self.active_end_date
-        )
+    def refresh_metrics(self):
+        if not self.metrics_controller:
+            for label in self.metric_labels.values():
+                label.configure(text="-")
+            return
 
-        #self.metric_labels["avg_occupied"].configure(text=data["avg_occupied"])
+        data = self.metrics_controller.get_summary(start=self.active_start_date, end=self.active_end_date)
+
+
         self.metric_labels["avg_wait"].configure(text=data["avg_wait"])
         self.metric_labels["avg_provider"].configure(text=data["avg_provider"])
         self.metric_labels["avg_cleaning"].configure(text=data["avg_cleaning"])
         self.metric_labels["turnovers"].configure(text=str(data["turnovers"]))
-        self.metric_labels["stuck_rooms"].configure(
-            text=", ".join(map(str, data["stuck_rooms"])) or "-"
-        )
+        self.metric_labels["stuck_rooms"].configure(text=", ".join(map(str, data["stuck_rooms"])) or "-")
         
     def apply_date_range(self):
         try:
@@ -279,6 +364,9 @@ class MainWindow(ctk.CTk):
                 self.end_day.get()
             ) + timedelta(days=1)  # inclusive end date
 
+            start = datetime(self.start_year.get(), self.start_month.get(), self.start_day.get())
+            end = datetime(self.end_year.get(), self.end_month.get(), self.end_day.get()) + timedelta(days=1)
+
             if start > end:
                 self.active_start_date = None
                 self.active_end_date = None
@@ -291,16 +379,19 @@ class MainWindow(ctk.CTk):
             self.active_start_date = None
             self.active_end_date = None
         
-    def load_rooms(self):
-        rooms = self.controller.get_all_rooms()
+    def clear_rooms(self):
+        for tile in self.room_tiles:
+            tile.destroy()
+        self.room_tiles = []
 
-        # Sort by priority, then room name
-        rooms.sort(
-            key=lambda r: (
-                STATUS_PRIORITY.get(RoomStatus(r["status"]), 99),
-                r["name"]
-            )
-        )
+    def reload_rooms(self):
+        self.clear_rooms()
+
+        if not self.controller:
+            return
+
+        rooms = self.controller.get_all_rooms()
+        rooms.sort(key=lambda r: (STATUS_PRIORITY.get(RoomStatus(r["status"]), 99), r["name"]))
 
         for idx, room in enumerate(rooms):
             tile = RoomTile(self.scrollable_frame, room, self.controller)
@@ -308,17 +399,18 @@ class MainWindow(ctk.CTk):
             self.room_tiles.append(tile)
 
     def refresh_tiles(self):
+        if not self.controller:
+            return
+        
         rooms = self.controller.get_all_rooms()
-
-        # Sort again on refresh
-        rooms.sort(
-            key=lambda r: (
-                STATUS_PRIORITY.get(RoomStatus(r["status"]), 99),
-                r["name"]
-            )
-        )
+        rooms.sort(key=lambda r: (STATUS_PRIORITY.get(RoomStatus(r["status"]), 99), r["name"]))
 
         room_map = {tile.room["id"]: tile for tile in self.room_tiles}
+
+        if len(room_map) != len(rooms) or any(room["id"] not in room_map for room in rooms):
+            self.reload_rooms()
+            return
+
 
         for idx, room in enumerate(rooms):
             tile = room_map[room["id"]]
@@ -329,12 +421,11 @@ class MainWindow(ctk.CTk):
     def auto_refresh(self):
         self.refresh_tiles()
         self.refresh_metrics()
-        self.after(1000, self.auto_refresh)  # refresh every 1 second
-
+        self.after(1000, self.auto_refresh)
 
 # ----------------------------
 # Run the app
 # ----------------------------
 if __name__ == "__main__":
-    app = MainWindow(controller)
+    app = MainWindow()
     app.mainloop()

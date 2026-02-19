@@ -118,6 +118,15 @@ class RoomController:
 
         self.db.conn.commit()
 
+    def delete_room(self, room_id: int):
+        cursor = self.db.conn.cursor()
+
+        cursor.execute("DELETE FROM visits WHERE room_id=?", (room_id,))
+        cursor.execute("DELETE FROM room_status_history WHERE room_id=?", (room_id,))
+        cursor.execute("DELETE FROM room_events WHERE room_id=?", (room_id,))
+        cursor.execute("DELETE FROM rooms WHERE id=?", (room_id,))
+
+        self.db.conn.commit()
 
     # ---------------------------
     # Query methods
