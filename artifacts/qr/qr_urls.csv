@@ -1,0 +1,5 @@
+room_id,room_name,role,url
+1,Exam 01,patient,http://192.168.1.50:8787/form?room_id=1&role=patient&sig=e0995bb37b100189a7d78ccf5e43de0c3659052a8d04b658db933e4e99fbdf8d
+1,Exam 01,provider,http://192.168.1.50:8787/form?room_id=1&role=provider&sig=8785444d422f3bd43dab74bd9ac8768dcc0795d82babbe723fae32f79d60d7a8
+2,Exam 02,patient,http://192.168.1.50:8787/form?room_id=2&role=patient&sig=481b479e1b816394e31e88f073ec3ccf65ba05736011aacf5a2aabdb21335281
+2,Exam 02,provider,http://192.168.1.50:8787/form?room_id=2&role=provider&sig=78e01d453b79ebbc1cd392b1bfbc0865010145aaa1b687995c26386ff6ed3a1e

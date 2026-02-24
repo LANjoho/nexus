@@ -1,4 +1,5 @@
 from models.enums import RoomStatus, UpdateSource
+from services.transition_rules import is_transition_allowed
 from database.db import Database
 from datetime import datetime
 
@@ -43,6 +44,12 @@ class RoomController:
             raise ValueError(f"Room with ID {room_id} does not exist")
 
         old_status = row["status"]
+        old_status_enum = RoomStatus(old_status)
+        
+        if not is_transition_allowed(old_status_enum, new_status):
+            raise ValueError(
+                f"Invalid transition for room {room_id}: {old_status_enum.value} -> {new_status.value}"
+            )
 
         # ---------------------------
         # VISIT START LOGIC
